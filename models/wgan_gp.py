@@ -15,7 +15,7 @@ Instead of weight clipping, WGAN-GP proposed gradient penalty.
 '''
 
 class WGAN_GP(BaseModel):
-    def __init__(self, name, training, D_lr=1e-4, G_lr=1e-4, image_shape=[64, 64, 3], z_dim=[8,8,3]):
+    def __init__(self, name, training, D_lr=1e-4, G_lr=1e-4, image_shape=[64, 64, 3], z_dim=[16,16,3]):
         self.beta1 = 0.0
         self.beta2 = 0.9
         self.ld = 10. # lambda
