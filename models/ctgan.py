@@ -31,6 +31,7 @@ class CTGAN(BaseModel):
             z = tf.placeholder(tf.float32, [None] + self.z_dim)
             global_step = tf.Variable(0, name='global_step', trainable=False)
             # `critic` named from wgan (wgan-gp use the term `discriminator` rather than `critic`)
+
             G0, G1, G2 = self._generator(z, tm)
             C_real = self._critic(X)
             C_fake0 = self._critic(G0, reuse=True)
@@ -113,8 +114,8 @@ class CTGAN(BaseModel):
     def _critic(self, X, reuse=False):
         #return self._good_critic(X, reuse)
         return self._good_critic(X,reuse)
-    def _generator(self, z, reuse=False):
-        return self._good_generator(z, reuse)
+    def _generator(self, z, net_tm0, reuse=False):
+        return self._good_generator(z, net_tm0, reuse)
         # return self._good_generator(X,reuse)
   
     def _residual_block(self, X, nf_output, resample, kernel_size=[3,3], name='res_block'):
@@ -188,9 +189,10 @@ class CTGAN(BaseModel):
     def _good_generator(self, lr, net_tm0, reuse=False):
         with tf.variable_scope('generator', reuse=reuse):
             nf = 64
-            
+
             h_lr = self._encoder_lr(lr, reuse=reuse) # extract lr feature
-        
+            import pdb
+            pdb.set_trace()
             h_tm0 = self._encoder_tm(net_tm0, reuse=reuse) # extract template feature
 
             h_combine0 = tf.concat([h_lr, h_tm0], 1) # 128
@@ -241,7 +243,8 @@ class CTGAN(BaseModel):
         with tf.variable_scope('encoder_tm', reuse=reuse):
             nf = 64
             nh = 64
-
+            import pdb
+            pdb.set_trace()
             with slim.arg_scope([slim.conv2d], kernel_size=[3,3], padding='SAME', activation_fn=tf.nn.elu):
                 net = slim.conv2d(X, nf)
                 
