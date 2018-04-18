@@ -5,7 +5,7 @@ from utils import expected_shape
 import ops
 from basemodel import BaseModel
 from custom_vgg16 import *
-
+from tensorflow.python.ops import math_ops
 from perc_net import *
 '''
 WGAN:
@@ -40,7 +40,7 @@ def total_variation_regularization(x, beta=1):
 
 
 class SRGAN(BaseModel):
-    def __init__(self, name, training, D_lr=1e-4, G_lr=1e-4, image_shape=[128, 128, 3], z_dim=[128,128,3]):
+    def __init__(self, name, training, D_lr=1e-4, G_lr=1e-4, image_shape=[128, 128, 3], z_dim=[32,32,3]):
         self.beta1 = 0.0
         self.beta2 = 0.9
         self.ld = 10. # lambda
@@ -59,6 +59,8 @@ class SRGAN(BaseModel):
             # change by xjc z_dim 64 -> [8,8,3]
             X = tf.placeholder(tf.float32, shape=[None] + [128, 128, 3])
             z = tf.placeholder(tf.float32, shape=[None] + [32, 32, 3], name = 'input')
+            # import pdb
+            # pdb.set_trace()
             global_step = tf.Variable(0, name='global_step', trainable=False)
          
             # vgg_s = custom_Vgg16(X, data_dict=data_dict)
@@ -83,17 +85,17 @@ class SRGAN(BaseModel):
             G_loss = tf.losses.sigmoid_cross_entropy(tf.ones_like(D_fake_logits), logits=D_fake_logits)
             MSE_loss = tf.losses.mean_squared_error(X, G)
 
-            G_loss = 1e-3 * G_loss + MSE_loss
+            G_loss = 1e-3*G_loss + MSE_loss
 
             D_loss_real = tf.losses.sigmoid_cross_entropy(tf.ones_like(D_real_logits), logits=D_real_logits)
             D_loss_fake = tf.losses.sigmoid_cross_entropy(tf.zeros_like(D_fake_logits), logits=D_fake_logits)
             D_loss = D_loss_real + D_loss_fake
 
-            D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/D/')
-            G_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/G/')
+            D_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/critic/')
+            G_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/generator/')
 
-            D_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope=self.name+'/D/')
-            G_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope=self.name+'/G/')
+            D_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope=self.name+'/critic/')
+            G_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope=self.name+'/generator/')
 
             with tf.control_dependencies(D_update_ops):
                 D_train_op = tf.train.AdamOptimizer(learning_rate=self.D_lr, beta1=self.beta1).\
@@ -113,9 +115,13 @@ class SRGAN(BaseModel):
             ])
 
             # sparse-step summary
-            tf.summary.image('fake_sample', G, max_outputs=self.FAKE_MAX_OUTPUT)
+           
             tf.summary.histogram('real_probs', D_real_prob)
             tf.summary.histogram('fake_probs', D_fake_prob)
+
+            tf.summary.image('fake_sample', G, max_outputs=self.FAKE_MAX_OUTPUT)
+            tf.summary.image('lr_sample', z, max_outputs=self.FAKE_MAX_OUTPUT)
+            tf.summary.image('hr_sample', X, max_outputs=self.FAKE_MAX_OUTPUT)
             self.all_summary_op = tf.summary.merge_all()
 
             # accesible points
@@ -133,39 +139,50 @@ class SRGAN(BaseModel):
         return self._good_generator(z, reuse)
         # return self._good_generator(X,reuse)
 
+    def _leaky_relu(self, x, alpha):
+        return tf.nn.relu(x) - alpha * tf.nn.relu(-x)
 
 
     def _good_critic(self, X, reuse=False):
         with tf.variable_scope('critic', reuse=reuse):
             nf = 64
-            with slim.arg_scope([slim.conv2d], kernel_size=[3,3], stride=1, padding='SAME', activation_fn=tf.nn.leaky_relu,  
+            with slim.arg_scope([slim.conv2d], kernel_size=[3,3], stride=1, padding='SAME', activation_fn=None,  
                 weights_initializer=tf.random_normal_initializer(stddev=0.02), biases_initializer=None):
                 
                 net = slim.conv2d(X, nf)
+                net = self._leaky_relu(net, 0.2)
 
                 net = slim.conv2d(net, nf, stride=2)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
 # ====================128
                 net = slim.conv2d(net, 2*nf)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
                 net = slim.conv2d(net, 2*nf, stride=2)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
                 
 # ====================256                                     
                 net = slim.conv2d(net, 4*nf)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
                 net = slim.conv2d(net, 4*nf, stride=2)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
 
 # ====================512  
                 net = slim.conv2d(net, 8*nf)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
                 net = slim.conv2d(net, 8*nf, stride=2)
-                net = slim.batch_norm(net, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = self._leaky_relu(net, 0.2)
+                net = slim.batch_norm(net, activation_fn=None, **self.bn_params)
 #===================================================================
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 1024, activation_fn=tf.nn.leaky_relu)
+                net = slim.fully_connected(net, 1024, activation_fn=None)
+                net = self._leaky_relu(net, 0.2)
                 net = slim.fully_connected(net, 1, activation_fn=None)
 
                 prob = tf.sigmoid(net)
@@ -173,7 +190,6 @@ class SRGAN(BaseModel):
             return prob, net
 
                 
-
 
 
     def _good_generator(self, X, reuse=False):
@@ -188,18 +204,19 @@ class SRGAN(BaseModel):
 
                 for i in range(16):
                     nn = slim.conv2d(net, nf, activation_fn=None)
-                    nn = slim.batch_norm(nn, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                    nn = slim.batch_norm(nn, **self.bn_params)
                     nn = slim.conv2d(nn, nf, activation_fn=None)
-                    nn = slim.batch_norm(nn, activation_fn=None, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                    nn = slim.batch_norm(nn, activation_fn=None, **self.bn_params)
                     nn = net + nn
                     net = nn
                 
                 net = slim.conv2d(net, nf, activation_fn=None)
-                net = slim.batch_norm(net, gamma_init=tf.random_normal_initializer(1., 0.02), **self.bn_params)
+                net = slim.batch_norm(net, **self.bn_params)
                 net = net + temp
 #===================================================================
-
+                
                 net = slim.conv2d(net, 4*nf, activation_fn=None)
+                bs = tf.shape(net)[0]
                 _, h, w, c = net.get_shape().as_list()
                 net = tf.transpose(net, (0, 3, 1, 2))
                 net = tf.reshape(net, (bs, 2, 2, c // (2 ** 2), h, w))
